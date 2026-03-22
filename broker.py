@@ -28,7 +28,8 @@ def generate_bool():
 
 
 def load_config():
-    config_file = Path("C:/src/dhan/algo/config.json")
+    import config
+    config_file = Path(config.CONFIG_FILE)
     if not config_file.exists():
         raise FileNotFoundError("Missing config.json in {}".format(config_file.parent))
     with open(config_file, "r") as f:

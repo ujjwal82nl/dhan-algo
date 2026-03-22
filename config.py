@@ -3,6 +3,13 @@
 #  Platform : Dhan (via Dhan-Tradehull)
 #  Instruments: NIFTY | BANKNIFTY (NSE)
 # ─────────────────────────────────────────────────────────────────
+ 
+# ── Credentials file path ─────────────────────────────────────────
+# Local / Windows development:
+CONFIG_FILE = "C:/src/dhan/algo/config.json"
+# Docker / VPS examples (uncomment and adjust as needed):
+# CONFIG_FILE = "/app/config.json"
+# CONFIG_FILE = "/run/secrets/dhan_config.json"
 
 # ── Instruments ───────────────────────────────────────────────────
 INSTRUMENTS = ["BANKNIFTY"]
