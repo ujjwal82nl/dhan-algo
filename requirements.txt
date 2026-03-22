@@ -1,0 +1,17 @@
+# Dhan trading
+Dhan-Tradehull
+
+# Excel tracker (keep for reference — now replaced by csv_tracker)
+xlwings
+
+# Technical indicators
+ta-lib
+pandas_ta_classic
+
+# Report generation
+pandas
+plotly
+jinja2
+
+# Core
+requests

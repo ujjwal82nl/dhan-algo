@@ -1,0 +1,37 @@
+# ── Credentials — NEVER commit these ──────────────────────────────
+config.json
+
+# ── Logs ──────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Excel tracker (runtime file, not source) ───────────────────────
+*.xlsx
+*.xlsm
+
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ───────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+
+# ── IDE / OS ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── xlwings temp files ─────────────────────────────────────────────
+xlwings.conf
