@@ -71,7 +71,13 @@ Edit `config.json`:
 {
     "dhan_config": {
         "client_code": "YOUR_CLIENT_CODE",
-        "access_token": "YOUR_ACCESS_TOKEN"
+        "access_token": "YOUR_ACCESS_TOKEN",
+        "remark": "Primary Trading Account"
+    },
+    "telegram_bot":{
+        "chat_id" : CHAT_ID,
+        "bot_token" : "YOUR_TELGRAM_BOT_TOKEN",
+        "remark": "Telegram bot information for notifications"
     }
 }
 ```
