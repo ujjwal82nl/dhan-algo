@@ -48,8 +48,8 @@ ACTIVE_STRATEGY = "shortStrangle_Adjust"   # currently active strategy
 EXCEL_FILE = "options_tracker.xlsx"
 
 # ── Timing (IST) ──────────────────────────────────────────────────
-MARKET_OPEN            = "09:25"
-MARKET_CLOSE           = "15:16"
+MARKET_OPEN            = "05:00"
+MARKET_CLOSE           = "10:40"
 SCAN_INTERVAL_SECONDS  = 120
 
 # ── Paper Trading ─────────────────────────────────────────────────
