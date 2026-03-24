@@ -188,7 +188,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
             ce_leg = self._ce_leg(trade)
             pe_leg = self._pe_leg(trade)
             if ce_leg is None or pe_leg is None:
-                return False
+                return False, None, None
             trade.adj_entry_premium  = ce_leg.entry_premium + pe_leg.entry_premium
             trade.adj_count          = 0
             trade.adj_straddle       = False
@@ -202,12 +202,12 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         if trade.adj_straddle:
             logger.info("[%s][%s] Already at straddle — no further adjustments",
                         trade.trade_id, STRATEGY_NAME)
-            return False
+            return False, None, None
 
         ce_leg = self._ce_leg(trade)
         pe_leg = self._pe_leg(trade)
         if ce_leg is None or pe_leg is None:
-            return False
+            return False, None, None
 
         ce_ltp = ltps.get(ce_leg.symbol, ce_leg.entry_premium)
         pe_ltp = ltps.get(pe_leg.symbol, pe_leg.entry_premium)
@@ -217,7 +217,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         trigger   = ADJUST_THRESHOLD * trade.adj_entry_premium
 
         if imbalance <= trigger:
-            return False   # premiums balanced — no adjustment needed
+            return False, None, None   # premiums balanced — no adjustment needed
 
         logger.info(
             "[%s][%s] Adjustment triggered: CE_ltp=%.1f PE_ltp=%.1f "
@@ -254,7 +254,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         if new_row is None:
             logger.warning("[%s][%s] No valid strike found for roll — skip adjustment",
                            trade.trade_id, STRATEGY_NAME)
-            return False
+            return False, None, None
 
         new_strike     = int(new_row["Strike Price"])
         new_sec_id     = int(new_row["{} SECURITY_ID".format(roll_side)])
@@ -281,7 +281,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
                 if straddle_row.empty:
                     logger.warning("[%s][%s] Straddle strike %d not in chain",
                                    trade.trade_id, STRATEGY_NAME, straddle_strike)
-                    return False
+                    return False, None, None
                 new_row      = straddle_row.iloc[0]
                 new_strike   = straddle_strike
                 new_sec_id   = int(new_row["CE SECURITY_ID"])
@@ -293,7 +293,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
                 if straddle_row.empty:
                     logger.warning("[%s][%s] Straddle strike %d not in chain",
                                    trade.trade_id, STRATEGY_NAME, straddle_strike)
-                    return False
+                    return False, None, None
                 new_row      = straddle_row.iloc[0]
                 new_strike   = straddle_strike
                 new_sec_id   = int(new_row["PE SECURITY_ID"])
@@ -309,7 +309,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         if not close_order_id:
             logger.error("[%s][%s] Failed to close %s leg — aborting adjustment",
                          trade.trade_id, STRATEGY_NAME, roll_side)
-            return False
+            return False, None, None
 
         profit_leg.exit_premium = broker.get_executed_price(
             close_order_id, paper_ltp=ltps.get(profit_leg.symbol, profit_leg.entry_premium)
@@ -325,7 +325,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         if not new_order_id:
             logger.error("[%s][%s] Failed to open new %s leg — adjustment incomplete",
                          trade.trade_id, STRATEGY_NAME, roll_side)
-            return False
+            return False, None, None
 
         new_fill = broker.get_executed_price(new_order_id, paper_ltp=new_ltp)
         time.sleep(1)
@@ -353,7 +353,8 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
             roll_side, new_symbol, new_strike, new_fill,
             trade.adj_straddle
         )
-        return True   # adjustment done — bot skips exit/close this cycle
+        # Return (True, closed_leg, new_leg) so the bot can record the adjustment
+        return True, profit_leg, new_leg
 
     # ─────────────────────────────────────────────────────────────
     # HELPERS

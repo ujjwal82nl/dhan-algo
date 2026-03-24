@@ -1,5 +1,6 @@
 from __future__ import annotations
 import pdb
+import time
 
 """
 broker.py
@@ -110,7 +111,7 @@ class DhanBroker:
         Returns None if the library returns a failure response.
         Caller must check for None and skip processing accordingly.
         """
-
+        time.sleep(1)
         result = self.tsl.get_ltp_data(names=names)
         if not result or (isinstance(result, dict) and result.get("status") == "failure"):
             logger.warning("get_ltp returned failure response for %s — skipping", names)

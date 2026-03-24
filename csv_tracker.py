@@ -149,7 +149,100 @@ def add_open_position(trade):
     logger.info("CSV: open position added — %s", trade.trade_id)
 
 
-def close_position(trade, exit_reason=""):
+def update_open_position(trade):
+    """
+    Rewrite the open_positions.csv row for a trade after an adjustment.
+    Reflects the new CE/PE symbols, strikes and entry premiums after a leg roll.
+    """
+    _ensure_data_dir()
+
+    # Always pick the currently OPEN leg for each side
+    ce_leg = next((l for l in trade.legs if l.option_type == "CE" and l.status == "OPEN"), None)
+    pe_leg = next((l for l in trade.legs if l.option_type == "PE" and l.status == "OPEN"), None)
+
+    def _p(leg):   return leg.entry_premium if leg else 0
+    def _q(leg):   return leg.quantity      if leg else 0
+    def _s(leg):   return leg.strike        if leg else ""
+    def _sym(leg): return leg.symbol        if leg else ""
+    def _l(leg):   return leg.lots          if leg else 0
+
+    expiry = (ce_leg or pe_leg).expiry if (ce_leg or pe_leg) else ""
+
+    rows = _read_csv(OPEN_FILE)
+    for row in rows:
+        if row.get("trade_id") == trade.trade_id:
+            row["ce_symbol"]        = _sym(ce_leg)
+            row["ce_strike"]        = _s(ce_leg)
+            row["ce_lots"]          = _l(ce_leg)
+            row["ce_entry_premium"] = _p(ce_leg)
+            row["ce_entry_value"]   = round(_p(ce_leg) * _q(ce_leg), 2)
+            row["pe_symbol"]        = _sym(pe_leg)
+            row["pe_strike"]        = _s(pe_leg)
+            row["pe_lots"]          = _l(pe_leg)
+            row["pe_entry_premium"] = _p(pe_leg)
+            row["pe_entry_value"]   = round(_p(pe_leg) * _q(pe_leg), 2)
+            row["total_credit"]     = round(
+                (_p(ce_leg) * _q(ce_leg)) + (_p(pe_leg) * _q(pe_leg)), 2
+            )
+            row["expiry"] = expiry
+            break
+
+    _write_csv(OPEN_FILE, rows, OPEN_COLS)
+    logger.info("CSV: open position updated after adjustment — %s", trade.trade_id)
+
+
+# ── Adjustment columns ─────────────────────────────────────────────────
+ADJUST_COLS = [
+    "timestamp", "trade_id", "instrument", "strategy", "adj_number",
+    "rolled_side",
+    "closed_symbol", "closed_strike", "closed_entry_premium", "closed_exit_premium",
+    "closed_qty", "booked_pnl",
+    "new_symbol", "new_strike", "new_entry_premium", "new_qty",
+    "is_straddle",
+]
+
+ADJUST_FILE = DATA_DIR / "adjustments.csv"
+
+
+def record_adjustment(trade, closed_leg, new_leg, adj_count, is_straddle=False):
+    """
+    Append one row to adjustments.csv recording what was closed and what
+    was opened during a leg roll, plus the booked P&L on the closed leg.
+
+    booked_pnl = (entry_premium - exit_premium) * quantity
+                 positive = profit captured, negative = loss taken
+    """
+    _ensure_data_dir()
+
+    booked_pnl = round(
+        (closed_leg.entry_premium - (closed_leg.exit_premium or 0)) * closed_leg.quantity, 2
+    )
+
+    row = {
+        "timestamp":            _ts(),
+        "trade_id":             trade.trade_id,
+        "instrument":           trade.instrument,
+        "strategy":             trade.strategy,
+        "adj_number":           adj_count,
+        "rolled_side":          closed_leg.option_type,
+        "closed_symbol":        closed_leg.symbol,
+        "closed_strike":        closed_leg.strike,
+        "closed_entry_premium": closed_leg.entry_premium,
+        "closed_exit_premium":  closed_leg.exit_premium or 0,
+        "closed_qty":           closed_leg.quantity,
+        "booked_pnl":           booked_pnl,
+        "new_symbol":           new_leg.symbol,
+        "new_strike":           new_leg.strike,
+        "new_entry_premium":    new_leg.entry_premium,
+        "new_qty":              new_leg.quantity,
+        "is_straddle":          is_straddle,
+    }
+
+    _append_csv(ADJUST_FILE, row, ADJUST_COLS)
+    logger.info(
+        "CSV: adjustment #%d recorded — %s | rolled %s | booked P&L Rs.%.0f",
+        adj_count, trade.trade_id, closed_leg.option_type, booked_pnl
+    )
     """Mark trade CLOSED in open_positions.csv and append to trade_history.csv."""
     _ensure_data_dir()
 
@@ -199,7 +292,7 @@ def close_position(trade, exit_reason=""):
         "exit_cost":          round(total_exit, 2),
         "pnl":                round(pnl, 2),
         "pnl_pct":            pnl_pct,
-        "exit_reason":        exit_reason,
+        "exit_reason":        "",
         "days_held":          days_held,
     }
     _append_csv(HISTORY_FILE, hist_row, HISTORY_COLS)

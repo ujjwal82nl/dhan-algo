@@ -218,9 +218,18 @@ class OptionsBot:
 
             # ── Run adjustment check first (if strategy supports it) ─
             if hasattr(self.strategy, "check_and_adjust"):
-                adjusted = self.strategy.check_and_adjust(exit_context)
+                adj_result = self.strategy.check_and_adjust(exit_context)
+                # check_and_adjust returns (bool, closed_leg, new_leg)
+                adjusted, closed_leg, new_leg = adj_result if isinstance(adj_result, tuple) else (adj_result, None, None)
                 if adjusted:
-                    logger.info("[%s][%s] Adjustment applied — skipping exit check this cycle",
+                    tracker.update_open_position(trade)
+                    if closed_leg and new_leg:
+                        tracker.record_adjustment(
+                            trade, closed_leg, new_leg,
+                            adj_count=getattr(trade, "adj_count", 1),
+                            is_straddle=getattr(trade, "adj_straddle", False),
+                        )
+                    logger.info("[%s][%s] Adjustment applied and recorded",
                                 trade.trade_id, self.strategy.NAME)
                     continue
 

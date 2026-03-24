@@ -645,3 +645,99 @@ def load_open_positions():
         logger.info("No open positions found in Excel tracker.")
 
     return trades
+
+
+def update_open_position(trade):
+    """
+    Rewrite the Open Positions row after an adjustment — updates CE/PE
+    symbols, strikes and premiums to reflect the rolled leg.
+    """
+    ws = _get_or_add_sheet("Open Positions")
+    ws.range("A1").value = "Last Updated: " + _ts()
+
+    ce_leg = next((l for l in trade.legs if l.option_type == "CE" and l.status == "OPEN"), None)
+    pe_leg = next((l for l in trade.legs if l.option_type == "PE" and l.status == "OPEN"), None)
+
+    def _p(leg):   return leg.entry_premium if leg else 0
+    def _q(leg):   return leg.quantity      if leg else 0
+    def _s(leg):   return leg.strike        if leg else ""
+    def _sym(leg): return leg.symbol        if leg else ""
+    def _l(leg):   return leg.lots          if leg else 0
+
+    trade_row = _find_trade_row(ws, trade.trade_id)
+    if not trade_row:
+        logger.warning("update_open_position: trade %s not found in sheet", trade.trade_id)
+        return
+
+    expiry = (ce_leg or pe_leg).expiry if (ce_leg or pe_leg) else ""
+
+    ws.range("E{}".format(trade_row)).value = _sym(ce_leg)
+    ws.range("F{}".format(trade_row)).value = _s(ce_leg)
+    ws.range("G{}".format(trade_row)).value = _l(ce_leg)
+    ws.range("H{}".format(trade_row)).value = _p(ce_leg)
+    ws.range("I{}".format(trade_row)).value = round(_p(ce_leg) * _q(ce_leg), 2)
+    ws.range("J{}".format(trade_row)).value = _sym(pe_leg)
+    ws.range("K{}".format(trade_row)).value = _s(pe_leg)
+    ws.range("L{}".format(trade_row)).value = _l(pe_leg)
+    ws.range("M{}".format(trade_row)).value = _p(pe_leg)
+    ws.range("N{}".format(trade_row)).value = round(_p(pe_leg) * _q(pe_leg), 2)
+    ws.range("O{}".format(trade_row)).value = round(
+        (_p(ce_leg) * _q(ce_leg)) + (_p(pe_leg) * _q(pe_leg)), 2
+    )
+    ws.range("P{}".format(trade_row)).value = expiry
+
+    _save()
+    logger.info("Excel: open position updated after adjustment — %s", trade.trade_id)
+
+
+def record_adjustment(trade, closed_leg, new_leg, adj_count, is_straddle=False):
+    """
+    Write adjustment details to the Adjustments sheet — one row per leg roll.
+    Records the closed leg's booked P&L and the new leg's entry details.
+    """
+    ws = _get_or_add_sheet("Adjustments")
+
+    # Write header if sheet is empty
+    if ws.range("A1").value is None or str(ws.range("A1").value).startswith("Last"):
+        ws.range("A1").value = "Last Updated: " + _ts()
+        headers = [
+            "Timestamp", "Trade ID", "Instrument", "Strategy", "Adj #",
+            "Rolled Side",
+            "Closed Symbol", "Closed Strike", "Closed Entry Rs.", "Closed Exit Rs.",
+            "Closed Qty", "Booked P&L (Rs.)",
+            "New Symbol", "New Strike", "New Entry Rs.", "New Qty",
+            "Is Straddle",
+        ]
+        for i, h in enumerate(headers, 1):
+            cell = ws.range((2, i))
+            cell.value                   = h
+            cell.api.Font.Bold           = True
+            cell.api.Font.Color          = 0xFFFFFF
+            cell.api.Interior.Color      = _rgb(*NAVY)
+            cell.api.HorizontalAlignment = -4108
+        ws.range((2, 1), (2, len(headers))).row_height = 28
+
+    booked_pnl = round(
+        (closed_leg.entry_premium - (closed_leg.exit_premium or 0)) * closed_leg.quantity, 2
+    )
+
+    r = _find_next_row(ws, start_row=3)
+    row_data = [
+        _ts(),
+        trade.trade_id, trade.instrument, trade.strategy, adj_count,
+        closed_leg.option_type,
+        closed_leg.symbol, closed_leg.strike,
+        closed_leg.entry_premium, closed_leg.exit_premium or 0,
+        closed_leg.quantity, booked_pnl,
+        new_leg.symbol, new_leg.strike, new_leg.entry_premium, new_leg.quantity,
+        is_straddle,
+    ]
+    ws.range("A{}".format(r)).value = row_data
+
+    # Colour booked P&L cell
+    ws.range("L{}".format(r)).color = GREEN_BG if booked_pnl >= 0 else RED_BG
+    ws.range("L{}".format(r)).api.NumberFormat = '#,##0;(#,##0);-'
+
+    _save()
+    logger.info("Excel: adjustment #%d recorded — %s | booked P&L Rs.%.0f",
+                adj_count, trade.trade_id, booked_pnl)
