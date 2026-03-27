@@ -12,7 +12,24 @@ CONFIG_FILE = "C:/src/dhan/algo/config.json"
 # CONFIG_FILE = "/run/secrets/dhan_config.json"
 
 # ── Instruments ───────────────────────────────────────────────────
-INSTRUMENTS = ["BANKNIFTY"]
+# Map each instrument name to its exchange string as required by
+# the Dhan-Tradehull API.
+#
+# Supported exchanges:
+#   "INDEX"  — NSE equity index options (NIFTY, BANKNIFTY, FINNIFTY …)
+#   "NFO"    — NSE F&O (stock futures/options)
+#   "MCX"    — Multi Commodity Exchange (CRUDEOIL, GOLD, SILVER …)
+#
+# Add or remove instruments here — no other file needs to change.
+#
+INSTRUMENTS = {
+    "BANKNIFTY": "INDEX",
+    # "NIFTY":     "INDEX",
+    # "FINNIFTY":  "INDEX",
+    "CRUDEOIL":  "MCX",
+    # "GOLD":      "MCX",
+    # "SILVER":    "MCX",
+}
 
 # ── Option Chain ──────────────────────────────────────────────────
 # expiry index passed to get_option_chain():
@@ -53,9 +70,6 @@ MARKET_CLOSE           = "10:40"
 SCAN_INTERVAL_SECONDS  = 120
 
 # ── Paper Trading ─────────────────────────────────────────────────
-# True  → simulation mode: no real orders placed, random IDs used,
-#          SL/TG triggers simulated via generate_bool().
-# False → live mode: real orders sent to Dhan. Use with caution.
 PAPER_TRADING = True
 
 # ── Logging ───────────────────────────────────────────────────────
