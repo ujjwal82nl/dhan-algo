@@ -29,7 +29,7 @@ import config
 logger = logging.getLogger(__name__)
 
 STRATEGY_NAME    = "shortStrangle_Adjust"
-ADJUST_THRESHOLD = 0.25   # trigger when |ce_ltp - pe_ltp| > 40% of combined premium
+ADJUST_THRESHOLD = 0.40   # trigger when |ce_ltp - pe_ltp| > 40% of combined premium
 
 
 class ShortStrangleAdjustStrategy(BaseStrategy):
