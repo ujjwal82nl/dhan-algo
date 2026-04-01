@@ -6,10 +6,10 @@
  
 # ── Credentials file path ─────────────────────────────────────────
 # Local / Windows development:
-CONFIG_FILE = "C:/src/dhan/algo/config.json"
+# CONFIG_FILE = "C:/src/dhan/algo/config.json"
 # Docker / VPS examples (uncomment and adjust as needed):
 # CONFIG_FILE = "/app/config.json"
-# CONFIG_FILE = "/run/secrets/dhan_config.json"
+CONFIG_FILE = "/home/ujjwal/src/secrets/dhan_config.json"
 
 # ── Instruments ───────────────────────────────────────────────────
 # Map each instrument name to its exchange string as required by
@@ -23,10 +23,10 @@ CONFIG_FILE = "C:/src/dhan/algo/config.json"
 # Add or remove instruments here — no other file needs to change.
 #
 INSTRUMENTS = {
-    "BANKNIFTY": "INDEX",
-    # "NIFTY":     "INDEX",
+    "BANKNIFTY" : "INDEX",
+    "NIFTY"     : "INDEX",
     # "FINNIFTY":  "INDEX",
-    "CRUDEOIL":  "MCX",
+    #"CRUDEOIL":  "MCX",
     # "GOLD":      "MCX",
     # "SILVER":    "MCX",
 }
@@ -65,8 +65,8 @@ ACTIVE_STRATEGY = "shortStrangle_Adjust"   # currently active strategy
 EXCEL_FILE = "options_tracker.xlsx"
 
 # ── Timing (IST) ──────────────────────────────────────────────────
-MARKET_OPEN            = "05:00"
-MARKET_CLOSE           = "10:40"
+MARKET_OPEN            = "09:00"
+MARKET_CLOSE           = "15:20"
 SCAN_INTERVAL_SECONDS  = 120
 
 # ── Paper Trading ─────────────────────────────────────────────────

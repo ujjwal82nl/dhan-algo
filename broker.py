@@ -15,6 +15,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+PAUSE_BETWEEN_CALLS = 0.5   # seconds — to avoid hitting rate limits in live mode
 
 # ── Paper trading helpers ───────────────────────────────────────────
 
@@ -78,10 +79,7 @@ class DhanBroker:
         Paper: returns a fixed simulated balance so the bot can start without auth.
         Note: 'availabelBalance' is a typo in the Dhan API — kept as-is.
         """
-        import config
-        if config.PAPER_TRADING:
-            logger.info("[PAPER] Simulated balance: Rs.500000.00")
-            return 500000.0
+        time.sleep(PAUSE_BETWEEN_CALLS)
         response = self.tsl.Dhan.get_fund_limits()
         if response["status"] != "success":
             err = response["remarks"]
@@ -90,9 +88,7 @@ class DhanBroker:
 
     def get_live_pnl(self):
         """Live: tsl.get_live_pnl(). Paper: returns 0.0 (P&L tracked via trade objects)."""
-        import config
-        if config.PAPER_TRADING:
-            return 0.0
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return float(self.tsl.get_live_pnl())
 
     def kill_switch(self, state="ON"):
@@ -127,7 +123,9 @@ class DhanBroker:
         if ce_ids.empty:
             raise ValueError("No CE entries in option chain for {}".format(underlying))
         first_id = int(ce_ids.iloc[0])
+        time.sleep(PAUSE_BETWEEN_CALLS)
         symbol   = self.get_security_name(first_id)
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return int(self.tsl.get_lot_size(tradingsymbol=symbol))
 
     def get_historical_data(self, tradingsymbol, exchange, timeframe):
@@ -135,6 +133,7 @@ class DhanBroker:
         exchange:  'INDEX' for NIFTY/BANKNIFTY spot | 'NFO' for F&O
         timeframe: '1' | '5' | '15' | '60' | 'DAY'
         """
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return self.tsl.get_historical_data(
             tradingsymbol=tradingsymbol,
             exchange=exchange,
@@ -148,6 +147,7 @@ class DhanBroker:
         Kwarg is capital 'U': Underlying= (exact library requirement).
         DataFrame columns: Strike Price, CE/PE SECURITY_ID, CE/PE Delta, CE/PE OI, CE/PE LTP
         """
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return self.tsl.get_option_chain(
             Underlying=underlying,
             exchange=exchange,
@@ -160,9 +160,11 @@ class DhanBroker:
         Returns list of expiry strings. [0]=current, [1]=next, etc.
         Reference: tsl.get_expiry_list('NIFTY', 'NFO')[1]
         """
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return self.tsl.get_expiry_list(underlying, exchange)
 
     def get_lot_size(self, tradingsymbol):
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return int(self.tsl.get_lot_size(tradingsymbol=tradingsymbol))
 
     # ── Order placement ────────────────────────────────────────────
@@ -183,6 +185,7 @@ class DhanBroker:
 
         logger.info("ORDER -> %s | %s | qty=%d | %s | price=%.1f",
                     transaction_type, tradingsymbol, quantity, order_type, price)
+        time.sleep(PAUSE_BETWEEN_CALLS)
         order_id = self.tsl.order_placement(
             tradingsymbol=tradingsymbol,
             exchange=exchange,
@@ -199,12 +202,14 @@ class DhanBroker:
     def place_sell_order(self, tradingsymbol, quantity,
                          order_type="MARKET", price=0, exchange="NFO"):
         """Convenience wrapper: sell (write) an option."""
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return self.place_order(tradingsymbol, "SELL", quantity,
                                 order_type=order_type, price=price, exchange=exchange)
 
     def place_buy_order(self, tradingsymbol, quantity,
                         order_type="MARKET", price=0, exchange="NFO"):
         """Convenience wrapper: buy back (close) a short option."""
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return self.place_order(tradingsymbol, "BUY", quantity,
                                 order_type=order_type, price=price, exchange=exchange)
 
@@ -219,16 +224,19 @@ class DhanBroker:
             fill = paper_ltp if paper_ltp is not None else 0.0
             logger.info("[PAPER] Simulated fill for orderId=%s: Rs.%.2f", order_id, fill)
             return fill
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return float(self.tsl.get_executed_price(orderid=order_id))
 
     # ── Positions / Orders ─────────────────────────────────────────
 
     def get_positions(self):
         """Returns DataFrame of open/CF positions, filters out CLOSED."""
+        time.sleep(PAUSE_BETWEEN_CALLS)
         df = self.tsl.get_positions()
         df = df[df["positionType"] != "CLOSED"].copy()
         df["P&L"] = df["unrealizedProfit"] - df["carryForwardSellValue"]
         return df
 
     def get_orderbook(self):
+        time.sleep(PAUSE_BETWEEN_CALLS)
         return self.tsl.get_orderbook()
