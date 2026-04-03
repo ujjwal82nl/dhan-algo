@@ -1,0 +1,11 @@
+{
+    "dhan_config": {
+        "client_code": "789324456",
+        "access_token": "eyJ0eXgkhjasdfe17890asdsfpc3MiOiJkaGFuIiwicGFydG5klsui34diIiwiZXhwIjoxNzc0MjU4NTM4LCJpYXQiOjE3NzQxNzIxMzgsInRva2VuQ29uc3VtZXJUeXBlIjoiU0VMRiIsIndlYmhvbf2tVncmwishsdOiIiLCJkaGFuQ2xpZW50SWQiOiIxMTAxNzUyMjc3In0.wHT6R-6zitV9GeBat94eaVq9CYrOoxLiTfT8IMaR3DQOVaLsxHVof3TvR3NIAdkCVstrGXXizghnfd2TEMrkdyw092jdgr",
+        "remark": "Primary Trading Account"
+    },
+    "telegram_bot":{
+        "chat_id" : 5093647563,
+        "bot_token" : "98736542993:TYHNJUQeImEudfdfgIdsewrtKlsdftRTCDdfg"
+    }
+}
