@@ -36,7 +36,7 @@ INSTRUMENTS = {
 #   0 = current/nearest expiry (weekly or monthly)
 #   1 = next expiry
 #   2 = 2 expiries out, etc.
-EXPIRY_INDEX  = 0
+EXPIRY_INDEX  = 1
 NUM_STRIKES   = 30    # number of strikes either side of ATM to fetch
 
 # ── Strategy Parameters ───────────────────────────────────────────
