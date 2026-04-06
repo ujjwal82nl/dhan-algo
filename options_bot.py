@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tabulate import tabulate
 
 """
 options_bot.py — Main entry point.
@@ -78,6 +79,46 @@ class OptionsBot:
             self.strategy.NAME,
             list(config.INSTRUMENTS.keys()),
         )
+
+    def show_open_positions(self, trade, ltp_map):
+        """
+        Formats and logs open legs using already fetched LTP data.
+        """
+        # 1. Extract only the legs that are currently OPEN
+        open_legs = [leg for leg in trade.legs if leg.status == "OPEN"]
+        
+        if not open_legs:
+            return
+
+        # 2. Build the table rows using the provided ltp_map
+        table_data = []
+        for leg in open_legs:
+            # Use .get() to avoid crashes if a symbol is missing from the map
+            ltp = ltp_map.get(leg.symbol, 0.0)
+            #pnl = (leg.entry_price - ltp) * leg.quantity if leg.txn == "SELL" else (ltp - leg.entry_price) * leg.quantity
+            pnl = (leg.entry_price - ltp) * leg.quantity
+            
+            table_data.append([
+                leg.symbol, 
+                leg.quantity, 
+                f"{leg.entry_price:.2f}", 
+                f"{ltp:.2f}",
+                f"{pnl:.2f}"
+            ])
+
+        # 3. Create the table string
+        table_output = tabulate(
+            table_data, 
+            headers=["SYMBOL", "QTY", "ENTRY", "LTP", "PNL"], 
+            tablefmt="pipe",
+            numalign="right"
+        )
+
+        # 4. Log the output
+        logger.info("[%s][%s] Strategy Snapshot:\n%s",
+                        trade.trade_id, 
+                        self.strategy.NAME, 
+                        table_output)
 
     def _make_trade_id(self, instrument):
         """Two-letter prefix from instrument + timestamp."""
@@ -221,6 +262,9 @@ class OptionsBot:
                 logger.warning("[%s] Option chain refresh failed — skipping | %s",
                                trade.trade_id, e)
                 continue
+
+            # Show open legs with current LTPs for better visibility in logs
+            self.show_open_positions(trade, ltps)
 
             exit_context = {
                 "trade":        trade,

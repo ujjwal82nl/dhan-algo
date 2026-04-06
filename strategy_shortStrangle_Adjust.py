@@ -7,17 +7,18 @@ Entry  : sell OTM CE + PE near TARGET_DELTA, highest OI
          Skip entry on Friday (NIFTY expires on Tuesday — no new positions
          on the last trading day of the expiry week)
 Exit   : 70% of max profit reached, OR stop loss hit, OR Friday 15:16
-Adjust : when imbalance_Rs > adj_entry_premium (the ₹ threshold)
+Adjust : when imbalance_Rs > adj_price (the ₹ threshold)
          where:
-           imbalance_Rs      = |ce_ltp - pe_ltp| * quantity   (total Rs.)
-           adj_entry_premium = ADJUST_THRESHOLD * total_premium_collected
+           imbalance_Rs      = |CE_ltp - PE_ltp| > adj_price  (the ₹ threshold)
+           adj_price         = ADJUST_THRESHOLD * |CE_ltp + PE_ltp|
                                Recalculated after every adjustment.
 
 Exchange is always taken from context["exchange"] (which comes from
 config.INSTRUMENTS) — never hardcoded anywhere in this file.
 
 State stored on the Trade object:
-  trade.adj_entry_premium  — ₹ threshold (recalculated after each adjustment)
+  trade.adj_price          — ₹ threshold = ADJUST_THRESHOLD * total_premium_collected
+                              Recalculated after every adjustment from all open legs.
   trade.adj_count          — number of adjustments completed
   trade.adj_ce_strike_low  — lowest CE strike allowed (= original PE strike)
   trade.adj_pe_strike_high — highest PE strike allowed (= original CE strike)
@@ -173,10 +174,10 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         """
         Called every scan cycle BEFORE exit_criteria.
 
-        Trigger: imbalance_Rs  >  trade.adj_entry_premium
+        Trigger: imbalance_Rs  >  trade.adj_price
           where:
-            imbalance_Rs      = |ce_ltp - pe_ltp| * quantity   (total Rs.)
-            adj_entry_premium = ADJUST_THRESHOLD * total_premium_collected
+            imbalance_Rs      = |ce_ltp - pe_ltp|  (total Rs.)
+            adj_price         = ADJUST_THRESHOLD * |CE_ltp + PE_ltp|
 
         Action: close the profitable leg, re-sell at new OTM strike whose
                 LTP ≈ the losing leg's current LTP.
@@ -195,13 +196,13 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         atm_strike = context.get("atm_strike", 0)   # used for OTM-only guard
 
         # ── Initialise state on first call ─────────────────────────────
-        if not hasattr(trade, "adj_entry_premium"):
+        if not hasattr(trade, "adj_price"):
             ce_leg = self._ce_leg(trade)
             pe_leg = self._pe_leg(trade)
             if ce_leg is None or pe_leg is None:
                 return False, None, None
 
-            trade.adj_entry_premium  = ADJUST_THRESHOLD * trade.total_premium_collected
+            trade.adj_price  = (ce_leg.entry_price + pe_leg.entry_price) * ADJUST_THRESHOLD
             trade.adj_count          = 0
             trade.adj_straddle       = False
             trade.adj_ce_strike_low  = pe_leg.strike
@@ -212,7 +213,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
                 "total_premium=Rs.%.0f | threshold=Rs.%.0f",
                 trade.trade_id, STRATEGY_NAME,
                 trade.total_premium_collected,
-                trade.adj_entry_premium,
+                trade.adj_price,
             )
 
         if trade.adj_straddle:
@@ -230,15 +231,21 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         qty    = ce_leg.quantity   # both legs always have the same qty
 
         # ── Trigger check (all values in total Rs.) ────────────────────
-        imbalance_total = abs(ce_ltp - pe_ltp) * qty
-        if imbalance_total <= trade.adj_entry_premium:
+        imbalance = abs(ce_ltp - pe_ltp)
+        if imbalance <= trade.adj_price:
+            logger.info(
+                "[%s][%s] NO Adjustment : "
+                "CE=%.1f PE=%.1f imbalance=%.0f threshold=%.0f",
+                trade.trade_id, STRATEGY_NAME,
+                ce_ltp, pe_ltp, imbalance, trade.adj_price
+            )
             return False, None, None
 
         logger.info(
             "[%s][%s] Adjustment triggered: "
             "CE_ltp=%.1f PE_ltp=%.1f imbalance_Rs=%.0f threshold_Rs=%.0f (adj#%d)",
             trade.trade_id, STRATEGY_NAME,
-            ce_ltp, pe_ltp, imbalance_total, trade.adj_entry_premium,
+            ce_ltp, pe_ltp, imbalance, trade.adj_price,
             trade.adj_count + 1,
         )
 
@@ -359,19 +366,19 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         trade.adj_count += 1
 
         # ── Recalculate threshold from all currently open legs ─────────
-        new_total_premium       = sum(
-            l.entry_premium for l in trade.legs if l.status == "OPEN"
+        new_total_price       = sum(
+            l.entry_price for l in trade.legs if l.status == "OPEN"
         )
-        trade.adj_entry_premium = ADJUST_THRESHOLD * new_total_premium
+        trade.adj_price = ADJUST_THRESHOLD * new_total_price
 
         logger.info(
             "[%s][%s] Adjustment #%d complete: new %s %s strike=%d "
             "entry_price=Rs.%.1f entry_premium=Rs.%.0f | "
-            "new_total_premium=Rs.%.0f | new_threshold=Rs.%.0f | Straddle=%s",
+            "new_total_price=Rs.%.0f | new_threshold=Rs.%.0f | Straddle=%s",
             trade.trade_id, STRATEGY_NAME, trade.adj_count,
             roll_side, new_symbol, new_strike,
             new_fill, new_fill * profit_leg.quantity,
-            new_total_premium, trade.adj_entry_premium,
+            new_total_price, trade.adj_price,
             trade.adj_straddle,
         )
 
