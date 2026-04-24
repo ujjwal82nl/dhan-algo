@@ -1,6 +1,7 @@
 from __future__ import annotations
 import pdb
 import time
+import pyotp
 
 """
 broker.py
@@ -41,9 +42,17 @@ def load_config():
 def get_tsl_client():
     """Create and return authenticated Tradehull client."""
     from Dhan_Tradehull import Tradehull
-    cfg   = load_config()
-    creds = cfg["dhan_config"]
-    return Tradehull(creds["client_code"], creds["access_token"])
+    cfg         = load_config()
+    creds       = cfg["dhan_config"]
+
+    client_code   = creds["client_code"]
+    totp_secret = creds["totp_secret"]
+    totp_pin    = pyotp.TOTP(totp_secret).now()
+    print(f"{  '='*20}")
+    print(f"Generated TOTP PIN: {totp_pin}")
+    print(f"{  '='*20}")
+
+    return Tradehull(ClientCode=client_code, mode="pin_totp", pin=totp_pin, totp_secret=totp_secret)
 
 
 class DhanBroker:
