@@ -21,5 +21,3 @@ requests
 
 # Show tabular data
 tabulate
-
-pyotp
