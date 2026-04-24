@@ -36,8 +36,8 @@ ADJUST_FILE  = DATA_DIR / "adjustments.csv"
 
 OPEN_COLS = [
     "trade_id", "date", "instrument", "exchange", "strategy",
-    "ce_symbol", "ce_strike", "ce_lots", "ce_entry_price", "ce_entry_premium",
-    "pe_symbol", "pe_strike", "pe_lots", "pe_entry_price", "pe_entry_premium",
+    "ce_symbol", "ce_strike", "ce_lots", "ce_transaction", "ce_entry_price", "ce_entry_premium",
+    "pe_symbol", "pe_strike", "pe_lots", "pe_transaction", "pe_entry_price", "pe_entry_premium",
     "total_credit", "expiry", "status", "mode",
 ]
 
@@ -119,16 +119,18 @@ def add_open_position(trade):
         "trade_id":         trade.trade_id,
         "date":             date.today().strftime("%Y-%m-%d"),
         "instrument":       trade.instrument,
-        "exchange":         trade.exchange,          # ← new column
+        "exchange":         trade.exchange,
         "strategy":         trade.strategy,
         "ce_symbol":        _attr(ce_leg, "symbol", ""),
         "ce_strike":        _attr(ce_leg, "strike"),
         "ce_lots":          _attr(ce_leg, "lots"),
+        "ce_transaction":   _attr(ce_leg, "transaction", "SELL"),   # ← new
         "ce_entry_price":   round(_attr(ce_leg, "entry_price"),   2),
         "ce_entry_premium": round(_attr(ce_leg, "entry_premium"), 2),
         "pe_symbol":        _attr(pe_leg, "symbol", ""),
         "pe_strike":        _attr(pe_leg, "strike"),
         "pe_lots":          _attr(pe_leg, "lots"),
+        "pe_transaction":   _attr(pe_leg, "transaction", "SELL"),   # ← new
         "pe_entry_price":   round(_attr(pe_leg, "entry_price"),   2),
         "pe_entry_premium": round(_attr(pe_leg, "entry_premium"), 2),
         "total_credit":     round(
@@ -169,11 +171,13 @@ def update_open_position(trade):
             row["ce_symbol"]        = _attr(ce_leg, "symbol", "")
             row["ce_strike"]        = _attr(ce_leg, "strike")
             row["ce_lots"]          = _attr(ce_leg, "lots")
+            row["ce_transaction"]   = _attr(ce_leg, "transaction", "SELL")   # ← new
             row["ce_entry_price"]   = round(_attr(ce_leg, "entry_price"),   2)
             row["ce_entry_premium"] = round(_attr(ce_leg, "entry_premium"), 2)
             row["pe_symbol"]        = _attr(pe_leg, "symbol", "")
             row["pe_strike"]        = _attr(pe_leg, "strike")
             row["pe_lots"]          = _attr(pe_leg, "lots")
+            row["pe_transaction"]   = _attr(pe_leg, "transaction", "SELL")   # ← new
             row["pe_entry_price"]   = round(_attr(pe_leg, "entry_price"),   2)
             row["pe_entry_premium"] = round(_attr(pe_leg, "entry_premium"), 2)
             row["total_credit"]     = round(
@@ -383,6 +387,7 @@ def load_open_positions():
                 expiry        = row.get("expiry", ""),
                 strike        = _i("ce_strike"),
                 option_type   = "CE",
+                transaction   = row.get("ce_transaction", "SELL"),  # ← restored; legacy rows default to SELL
                 lots          = _i("ce_lots"),
                 quantity      = ce_qty,
                 entry_price   = ce_entry_price,
@@ -398,6 +403,7 @@ def load_open_positions():
                 expiry        = row.get("expiry", ""),
                 strike        = _i("pe_strike"),
                 option_type   = "PE",
+                transaction   = row.get("pe_transaction", "SELL"),  # ← restored; legacy rows default to SELL
                 lots          = _i("pe_lots"),
                 quantity      = pe_qty,
                 entry_price   = pe_entry_price,

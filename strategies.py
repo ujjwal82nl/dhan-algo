@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 """
-Strategy engine — dataclasses, strike selection, entry/exit helpers.
+Strategy engine — strike selection & entry/exit logic
+for NIFTY and BANKNIFTY weekly options selling.
 """
 
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, date
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 import config
 
@@ -16,20 +17,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class OptionLeg:
-    symbol:       str
-    instrument:   str    # e.g. BANKNIFTY, CRUDEOIL
-    exchange:     str    # e.g. INDEX, MCX  — sourced from config.INSTRUMENTS
-    expiry:       str    # e.g. '16APR2026'
-    strike:       int
-    option_type:  str    # CE | PE
-    lots:         int
-    quantity:     int    # lots * lot_size
-
-    # entry_price  : raw per-unit fill price (e.g. Rs. 163.40 per unit)
-    # entry_premium: total Rs. = entry_price * quantity
-    entry_price:   float = 0.0
-    entry_premium: float = 0.0
-
+    symbol:        str
+    instrument:    str          # NIFTY | BANKNIFTY
+    exchange:      str          # INDEX
+    expiry:        str          # e.g. '25JAN2025'
+    strike:        int
+    option_type:   str          # CE | PE
+    transaction:   str          # SELL | BUY  ← new field
+    lots:          int
+    quantity:      int          # lots * lot_size
+    entry_price:   float        # price per unit at which the leg was executed (positive for SELL, negative for BUY)
+    entry_premium: float        # per-unit fill price
     entry_time:    datetime           = field(default_factory=datetime.now)
     exit_premium:  Optional[float]    = None   # per-unit exit price
     exit_time:     Optional[datetime] = None
@@ -49,16 +47,29 @@ class Trade:
 
     @property
     def total_premium_collected(self):
-        """Sum of entry_premium across all legs (already in total Rs.)."""
-        return sum(leg.entry_premium for leg in self.legs)
+        """
+        For SELL legs: premium collected = entry_premium (positive credit)
+        For BUY  legs: premium paid      = entry_premium (negative credit)
+        Net credit = sum over all legs with sign.
+        """
+        total = 0.0
+        for leg in self.legs:
+            val = leg.entry_premium
+            total += val if leg.transaction == "SELL" else -val
+        return total
 
     @property
     def current_premium(self):
-        """Current mark-to-market cost to close. exit_premium is per-unit."""
-        return sum(
-            (leg.exit_premium or leg.entry_price) * leg.quantity
-            for leg in self.legs
-        )
+        """
+        Current mark-to-market cost to close all open legs.
+        SELL legs: cost to buy back  = exit_premium (or entry) * quantity
+        BUY  legs: value received    = exit_premium (or entry) * quantity
+        """
+        total = 0.0
+        for leg in self.legs:
+            price = (leg.exit_premium or leg.entry_premium) * leg.quantity
+            total += price if leg.transaction == "SELL" else -price
+        return total
 
     @property
     def pnl(self):
@@ -115,7 +126,6 @@ class EntryFilter:
             return False, "Premium {:.0f} below MIN_PREMIUM {}".format(
                 premium, config.MIN_PREMIUM)
 
-        # One open position per instrument (regardless of exchange)
         already_in = any(
             t.instrument == instrument and t.status == "OPEN"
             for t in self.open_positions

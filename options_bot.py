@@ -3,15 +3,14 @@ from tabulate import tabulate
 
 """
 options_bot.py — Main entry point.
-
 Run: python options_bot.py
 
 Flow every scan cycle:
   1. Check market hours
-  2. For each instrument, look up its exchange from config.INSTRUMENTS
-  3. Scan for entry conditions
-  4. Place orders if conditions met (exchange passed to all broker calls)
-  5. Monitor open positions for exit (exchange from Trade object)
+  2. Fetch index spot prices
+  3. Scan for entry conditions on NIFTY / BANKNIFTY
+  4. Place orders if conditions met
+  5. Monitor open positions for exit
   6. Update CSV tracker
 """
 
@@ -24,11 +23,11 @@ from typing import List
 import config
 from broker import DhanBroker, get_tsl_client, generate_bool
 from strategies import (
-    OptionLeg, Trade, EntryFilter, ExitManager, get_strategy
+    OptionLeg, Trade, StrikeSelector, EntryFilter, ExitManager, get_strategy
 )
 import csv_tracker as tracker
 
-# ── Logging ────────────────────────────────────────────────────────────
+# ── Logging setup ──────────────────────────────────────────────────
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL),
@@ -36,12 +35,12 @@ logging.basicConfig(
     handlers=[
         logging.FileHandler(config.LOG_FILE),
         logging.StreamHandler(),
-    ],
+    ]
 )
 logger = logging.getLogger(__name__)
 
 
-# ── Helpers ────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────
 
 def is_market_open():
     now = datetime.now().strftime("%H:%M")
@@ -49,11 +48,11 @@ def is_market_open():
 
 
 def compute_daily_loss(closed_trades):
-    today = date.today()
-    return sum(max(0, -t.pnl) for t in closed_trades if t.entry_date == today)
+    today_closed = [t for t in closed_trades if t.entry_date == date.today()]
+    return sum(max(0, -t.pnl) for t in today_closed)
 
 
-# ── Core bot ───────────────────────────────────────────────────────────
+# ── Core logic ─────────────────────────────────────────────────────
 
 class OptionsBot:
 
@@ -183,7 +182,7 @@ class OptionsBot:
             symbol = self.broker.get_security_name(sec_id)
             qty    = leg_def["lots"] * lot_size
             ltp    = leg_def.get("ltp", 0.0)
-            txn    = leg_def["transaction"]
+            txn    = leg_def["transaction"]   # "SELL" or "BUY"
 
             # Order placement: exchange for F&O legs is the instrument's own exchange.
             # INDEX options trade on NFO; MCX options trade on MCX.
@@ -215,6 +214,7 @@ class OptionsBot:
                 expiry        = expiry,
                 strike        = strike,
                 option_type   = leg_def["option_type"],
+                transaction   = txn,              # ← stored on every leg
                 lots          = leg_def["lots"],
                 quantity      = qty,
                 entry_price   = fill,
@@ -228,7 +228,7 @@ class OptionsBot:
                     instrument, exchange, self.strategy.NAME,
                     trade.trade_id, trade.total_premium_collected)
 
-    # ── Exit monitoring ────────────────────────────────────────────────
+    # ── Exit monitoring ────────────────────────────────────────────
 
     def monitor_exits(self):
         """Call strategy exit/adjustment logic per open trade."""
@@ -320,14 +320,20 @@ class OptionsBot:
 
             # Close all open legs
             order_exchange = "NFO" if trade.exchange == "INDEX" else trade.exchange
+
+            # Close transaction is always the opposite of the entry transaction:
+            # SELL leg → BUY to close  |  BUY leg → SELL to close
             all_closed = True
             for leg in trade.legs:
                 if leg.status == "OPEN":
-                    order_id = self.broker.place_buy_order(
-                        leg.symbol, leg.quantity, exchange=order_exchange
-                    )
+                    close_txn = "BUY" if leg.transaction == "SELL" else "SELL"
+                    if close_txn == "BUY":
+                        order_id = self.broker.place_buy_order(leg.symbol, leg.quantity, exchange=order_exchange)
+                    else:
+                        order_id = self.broker.place_sell_order(leg.symbol, leg.quantity, exchange=order_exchange)
+
                     if order_id:
-                        leg.exit_premium = ltps.get(leg.symbol, leg.entry_price)
+                        leg.exit_premium = ltps.get(leg.symbol, leg.entry_premium)
                         leg.status       = "CLOSED"
                     else:
                         all_closed = False
@@ -340,7 +346,7 @@ class OptionsBot:
                 self.closed_trades.append(trade)
                 tracker.close_position(trade, exit_reason=reason)
 
-    # ── Daily summary ──────────────────────────────────────────────────
+    # ── Daily summary ──────────────────────────────────────────────
 
     def update_daily(self):
         today_closed = [t for t in self.closed_trades if t.entry_date == date.today()]
@@ -360,17 +366,17 @@ class OptionsBot:
             losing        = losses,
         )
 
-    # ── Main loop ──────────────────────────────────────────────────────
+    # ── Main loop ──────────────────────────────────────────────────
 
     def run(self):
         logger.info("=" * 60)
-        logger.info(" Options Selling Bot STARTED")
-        logger.info(" Mode        : %s",
+        logger.info("  Options Selling Bot STARTED")
+        logger.info("  Mode        : %s",
                     "*** PAPER TRADING ***" if config.PAPER_TRADING else "LIVE")
-        logger.info(" Instruments : %s", config.INSTRUMENTS)
-        logger.info(" Strategy    : %s — %s",
+        logger.info("  Instruments : %s", config.INSTRUMENTS)
+        logger.info("  Strategy    : %s — %s",
                     self.strategy.NAME, self.strategy.DESCRIPTION)
-        logger.info(" Profit Tgt  : %.0f%% | SL: %.1fx",
+        logger.info("  Profit Tgt  : %.0f%% | SL: %.1fx",
                     config.PROFIT_TARGET_PCT * 100, config.STOP_LOSS_MULTIPLIER)
         logger.info("=" * 60)
 

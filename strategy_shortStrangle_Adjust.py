@@ -355,6 +355,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
             expiry        = profit_leg.expiry,
             strike        = new_strike,
             option_type   = roll_side,
+            transaction   = "SELL",
             lots          = profit_leg.lots,
             quantity      = profit_leg.quantity,
             entry_price   = new_fill,
