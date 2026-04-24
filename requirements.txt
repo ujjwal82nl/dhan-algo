@@ -1,8 +1,8 @@
 # Dhanhq
-dhanhq==2.1.0
+dhanhq==2.2.0
 
 # Dhan trading
-Dhan_Tradehull==3.1.2
+Dhan_Tradehull==3.2.1
 
 # Excel tracker (keep for reference — now replaced by csv_tracker)
 xlwings
