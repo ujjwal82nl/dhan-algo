@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 """
+<<<<<<< HEAD
 Strategy engine — strike selection & entry/exit logic
 for NIFTY and BANKNIFTY weekly options selling.
+=======
+strategies.py — Core dataclasses, helpers, and strategy registry.
+
+This file stays in the project root. All existing imports work unchanged:
+  from strategies import Trade, OptionLeg, get_strategy, EntryFilter
+
+Strategy implementation files live in the strategies/ subfolder.
+_build_registry() is the only place that references them.
+>>>>>>> adjustment/strategy-review
 """
 
 import logging
@@ -17,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class OptionLeg:
+<<<<<<< HEAD
     symbol:        str
     instrument:    str          # NIFTY | BANKNIFTY
     exchange:      str          # INDEX
@@ -28,6 +39,27 @@ class OptionLeg:
     quantity:      int          # lots * lot_size
     entry_price:   float        # price per unit at which the leg was executed (positive for SELL, negative for BUY)
     entry_premium: float        # per-unit fill price
+=======
+    symbol:       str
+    instrument:   str    # e.g. BANKNIFTY, CRUDEOIL
+    exchange:     str    # e.g. INDEX, MCX
+    expiry:       str    # e.g. '07APR2026'
+    strike:       int
+    option_type:  str    # CE | PE
+    lots:         int
+    quantity:     int    # lots * lot_size
+
+    # transaction: the OPENING action for this leg
+    #   "SELL" — short leg (premium collected)
+    #   "BUY"  — long leg  (premium paid)
+    transaction:   str   = "SELL"
+
+    # entry_price  : raw per-unit fill price
+    # entry_premium: total Rs. = entry_price * quantity (always positive)
+    entry_price:   float = 0.0
+    entry_premium: float = 0.0
+
+>>>>>>> adjustment/strategy-review
     entry_time:    datetime           = field(default_factory=datetime.now)
     exit_premium:  Optional[float]    = None   # per-unit exit price
     exit_time:     Optional[datetime] = None
@@ -38,8 +70,8 @@ class OptionLeg:
 @dataclass
 class Trade:
     trade_id:   str
-    instrument: str    # e.g. BANKNIFTY, CRUDEOIL
-    exchange:   str    # e.g. INDEX, MCX  — sourced from config.INSTRUMENTS
+    instrument: str
+    exchange:   str
     strategy:   str
     legs:       List[OptionLeg] = field(default_factory=list)
     status:     str             = "OPEN"
@@ -48,6 +80,7 @@ class Trade:
     @property
     def total_premium_collected(self):
         """
+<<<<<<< HEAD
         For SELL legs: premium collected = entry_premium (positive credit)
         For BUY  legs: premium paid      = entry_premium (negative credit)
         Net credit = sum over all legs with sign.
@@ -56,11 +89,24 @@ class Trade:
         for leg in self.legs:
             val = leg.entry_premium
             total += val if leg.transaction == "SELL" else -val
+=======
+        Net premium at entry:
+          SELL legs add entry_premium (income)
+          BUY  legs subtract entry_premium (cost)
+        """
+        total = 0.0
+        for leg in self.legs:
+            if leg.transaction == "SELL":
+                total += leg.entry_premium
+            else:
+                total -= leg.entry_premium
+>>>>>>> adjustment/strategy-review
         return total
 
     @property
     def current_premium(self):
         """
+<<<<<<< HEAD
         Current mark-to-market cost to close all open legs.
         SELL legs: cost to buy back  = exit_premium (or entry) * quantity
         BUY  legs: value received    = exit_premium (or entry) * quantity
@@ -69,6 +115,18 @@ class Trade:
         for leg in self.legs:
             price = (leg.exit_premium or leg.entry_premium) * leg.quantity
             total += price if leg.transaction == "SELL" else -price
+=======
+        Current mark-to-market cost to close.
+        exit_premium is per-unit; multiply by quantity.
+        """
+        total = 0.0
+        for leg in self.legs:
+            price = (leg.exit_premium or leg.entry_price) * leg.quantity
+            if leg.transaction == "SELL":
+                total += price
+            else:
+                total -= price
+>>>>>>> adjustment/strategy-review
         return total
 
     @property
@@ -101,7 +159,7 @@ class StrikeSelector:
         candidates["_delta_dist"] = (candidates[delta_col].abs() - target_delta).abs()
         best = candidates.loc[candidates["_delta_dist"].idxmin()]
         if abs(best[delta_col]) > config.MAX_DELTA:
-            logger.warning("Best delta %.2f exceeds MAX_DELTA %.2f",
+            logger.warning("Best strike delta %.2f exceeds MAX_DELTA %.2f",
                            best[delta_col], config.MAX_DELTA)
             return None
         return best
@@ -117,22 +175,23 @@ class EntryFilter:
     def can_enter(self, instrument, premium):
         open_count = len([t for t in self.open_positions if t.status == "OPEN"])
         if open_count >= config.MAX_OPEN_POSITIONS:
-            return False, "Max open positions ({}) reached".format(config.MAX_OPEN_POSITIONS)
-
+            return False, "Max open positions ({}) reached".format(
+                config.MAX_OPEN_POSITIONS)
         if self.daily_loss >= config.MAX_DAILY_LOSS_INR:
             return False, "Daily loss limit Rs.{} hit".format(config.MAX_DAILY_LOSS_INR)
-
         if premium < config.MIN_PREMIUM:
             return False, "Premium {:.0f} below MIN_PREMIUM {}".format(
                 premium, config.MIN_PREMIUM)
+<<<<<<< HEAD
 
+=======
+>>>>>>> adjustment/strategy-review
         already_in = any(
             t.instrument == instrument and t.status == "OPEN"
             for t in self.open_positions
         )
         if already_in:
             return False, "Already have an open position in {}".format(instrument)
-
         return True, "OK"
 
 
@@ -174,11 +233,19 @@ def build_symbol(instrument, strike, option_type, expiry):
     return "{}{}{}{}".format(instrument, compact, strike, option_type)
 
 
-# ── Strategy Registry ──────────────────────────────────────────────
-
+# ── Strategy Registry ──────────────────────────────────────────────────────
+#
+# Strategy files live in strategies/ (a Python package).
+# Import using the package prefix: strategies.strategy_<name>
+#
+# To add a new strategy:
+#   1. Create  strategies/strategy_myNew.py
+#   2. Add one line in _build_registry() below
+#   3. Set ACTIVE_STRATEGY = "myNew" in config.py  — nothing else changes
+#
 def _build_registry():
-    from strategy_shortStrangle        import ShortStrangleStrategy
-    from strategy_shortStrangle_Adjust import ShortStrangleAdjustStrategy
+    from strategies.strategy_shortStrangle        import ShortStrangleStrategy
+    from strategies.strategy_shortStrangle_Adjust import ShortStrangleAdjustStrategy
     return {
         ShortStrangleStrategy.NAME:       ShortStrangleStrategy,
         ShortStrangleAdjustStrategy.NAME: ShortStrangleAdjustStrategy,
