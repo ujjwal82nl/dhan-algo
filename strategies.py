@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 """
-Strategy engine — dataclasses, strike selection, entry/exit helpers.
+strategies.py — Core dataclasses, helpers, and strategy registry.
+
+This file stays in the project root. All existing imports work unchanged:
+  from strategies import Trade, OptionLeg, get_strategy, EntryFilter
+
+Strategy implementation files live in the strategies/ subfolder.
+_build_registry() is the only place that references them.
 """
 
 import logging
@@ -18,15 +24,20 @@ logger = logging.getLogger(__name__)
 class OptionLeg:
     symbol:       str
     instrument:   str    # e.g. BANKNIFTY, CRUDEOIL
-    exchange:     str    # e.g. INDEX, MCX  — sourced from config.INSTRUMENTS
-    expiry:       str    # e.g. '16APR2026'
+    exchange:     str    # e.g. INDEX, MCX
+    expiry:       str    # e.g. '07APR2026'
     strike:       int
     option_type:  str    # CE | PE
     lots:         int
     quantity:     int    # lots * lot_size
 
-    # entry_price  : raw per-unit fill price (e.g. Rs. 163.40 per unit)
-    # entry_premium: total Rs. = entry_price * quantity
+    # transaction: the OPENING action for this leg
+    #   "SELL" — short leg (premium collected)
+    #   "BUY"  — long leg  (premium paid)
+    transaction:   str   = "SELL"
+
+    # entry_price  : raw per-unit fill price
+    # entry_premium: total Rs. = entry_price * quantity (always positive)
     entry_price:   float = 0.0
     entry_premium: float = 0.0
 
@@ -40,8 +51,8 @@ class OptionLeg:
 @dataclass
 class Trade:
     trade_id:   str
-    instrument: str    # e.g. BANKNIFTY, CRUDEOIL
-    exchange:   str    # e.g. INDEX, MCX  — sourced from config.INSTRUMENTS
+    instrument: str
+    exchange:   str
     strategy:   str
     legs:       List[OptionLeg] = field(default_factory=list)
     status:     str             = "OPEN"
@@ -49,16 +60,33 @@ class Trade:
 
     @property
     def total_premium_collected(self):
-        """Sum of entry_premium across all legs (already in total Rs.)."""
-        return sum(leg.entry_premium for leg in self.legs)
+        """
+        Net premium at entry:
+          SELL legs add entry_premium (income)
+          BUY  legs subtract entry_premium (cost)
+        """
+        total = 0.0
+        for leg in self.legs:
+            if leg.transaction == "SELL":
+                total += leg.entry_premium
+            else:
+                total -= leg.entry_premium
+        return total
 
     @property
     def current_premium(self):
-        """Current mark-to-market cost to close. exit_premium is per-unit."""
-        return sum(
-            (leg.exit_premium or leg.entry_price) * leg.quantity
-            for leg in self.legs
-        )
+        """
+        Current mark-to-market cost to close.
+        exit_premium is per-unit; multiply by quantity.
+        """
+        total = 0.0
+        for leg in self.legs:
+            price = (leg.exit_premium or leg.entry_price) * leg.quantity
+            if leg.transaction == "SELL":
+                total += price
+            else:
+                total -= price
+        return total
 
     @property
     def pnl(self):
@@ -90,7 +118,7 @@ class StrikeSelector:
         candidates["_delta_dist"] = (candidates[delta_col].abs() - target_delta).abs()
         best = candidates.loc[candidates["_delta_dist"].idxmin()]
         if abs(best[delta_col]) > config.MAX_DELTA:
-            logger.warning("Best delta %.2f exceeds MAX_DELTA %.2f",
+            logger.warning("Best strike delta %.2f exceeds MAX_DELTA %.2f",
                            best[delta_col], config.MAX_DELTA)
             return None
         return best
@@ -106,23 +134,19 @@ class EntryFilter:
     def can_enter(self, instrument, premium):
         open_count = len([t for t in self.open_positions if t.status == "OPEN"])
         if open_count >= config.MAX_OPEN_POSITIONS:
-            return False, "Max open positions ({}) reached".format(config.MAX_OPEN_POSITIONS)
-
+            return False, "Max open positions ({}) reached".format(
+                config.MAX_OPEN_POSITIONS)
         if self.daily_loss >= config.MAX_DAILY_LOSS_INR:
             return False, "Daily loss limit Rs.{} hit".format(config.MAX_DAILY_LOSS_INR)
-
         if premium < config.MIN_PREMIUM:
             return False, "Premium {:.0f} below MIN_PREMIUM {}".format(
                 premium, config.MIN_PREMIUM)
-
-        # One open position per instrument (regardless of exchange)
         already_in = any(
             t.instrument == instrument and t.status == "OPEN"
             for t in self.open_positions
         )
         if already_in:
             return False, "Already have an open position in {}".format(instrument)
-
         return True, "OK"
 
 
@@ -164,11 +188,19 @@ def build_symbol(instrument, strike, option_type, expiry):
     return "{}{}{}{}".format(instrument, compact, strike, option_type)
 
 
-# ── Strategy Registry ──────────────────────────────────────────────
-
+# ── Strategy Registry ──────────────────────────────────────────────────────
+#
+# Strategy files live in strategies/ (a Python package).
+# Import using the package prefix: strategies.strategy_<name>
+#
+# To add a new strategy:
+#   1. Create  strategies/strategy_myNew.py
+#   2. Add one line in _build_registry() below
+#   3. Set ACTIVE_STRATEGY = "myNew" in config.py  — nothing else changes
+#
 def _build_registry():
-    from strategy_shortStrangle        import ShortStrangleStrategy
-    from strategy_shortStrangle_Adjust import ShortStrangleAdjustStrategy
+    from strategies.strategy_shortStrangle        import ShortStrangleStrategy
+    from strategies.strategy_shortStrangle_Adjust import ShortStrangleAdjustStrategy
     return {
         ShortStrangleStrategy.NAME:       ShortStrangleStrategy,
         ShortStrangleAdjustStrategy.NAME: ShortStrangleAdjustStrategy,
