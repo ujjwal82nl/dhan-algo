@@ -3,14 +3,19 @@ from __future__ import annotations
 """
 strategy_shortStrangle.py — Strategy: "shortStrangle"
 
-Delta-based short strangle without adjustments.
-Exchange is always taken from context["exchange"] — never hardcoded.
+Moved to strategies/ folder.
+
+Delta-based short strangle with no mid-trade adjustment.
+Entry  : sell OTM CE + PE near TARGET_DELTA
+Exit   : 70% of premium collected, or SL, or expiry day before 3 PM
 """
 
 import logging
 from datetime import datetime, date
 
-from strategy_base import BaseStrategy, EntrySignal
+# strategy_base is a sibling file inside this package
+from strategies.strategy_base import BaseStrategy, EntrySignal
+
 import config
 
 logger = logging.getLogger(__name__)
@@ -19,14 +24,12 @@ logger = logging.getLogger(__name__)
 class ShortStrangleStrategy(BaseStrategy):
 
     NAME        = "shortStrangle"
-    DESCRIPTION = "Delta-based short strangle without adjustments"
+    DESCRIPTION = "Delta-based short strangle, no mid-trade adjustment"
 
     # ── Entry ──────────────────────────────────────────────────────────
 
     def entry_criteria(self, context):
         instrument  = context["instrument"]
-        # exchange is available in context but not needed here — broker
-        # calls are made in options_bot.py which handles the exchange routing.
         oc          = context["option_chain"]
         open_trades = context["open_trades"]
 

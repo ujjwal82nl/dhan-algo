@@ -1,113 +1,82 @@
 from __future__ import annotations
 
 """
-strategy_base.py — Abstract base class for all trading strategies.
+strategy_base.py — Abstract base class for all strategies.
 
-Every strategy you create must:
-  1. Inherit from BaseStrategy
-  2. Implement all three methods: entry_criteria, exit_criteria, adjustment_done
-  3. Register itself in the STRATEGY_REGISTRY at the bottom of strategies.py
-
-The bot calls these methods each scan cycle and acts on the returned values.
+Moved to strategies/ folder.
+Imports of top-level modules (config, strategies) work because
+options_bot.py adds the project root to sys.path before importing
+anything from this package.
 """
 
-import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
 
-logger = logging.getLogger(__name__)
+
+@dataclass
+class EntrySignal:
+    """
+    Returned by entry_criteria() when a trade should be opened.
+
+    legs: list of dicts, one per leg to place. Each dict must contain:
+      {
+          "security_id": int,         # from option chain
+          "option_type": "CE" | "PE",
+          "transaction": "SELL"|"BUY",
+          "ltp":         float,       # last traded price at signal time
+          "lots":        int,
+      }
+    """
+    strategy_name: str
+    legs: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class BaseStrategy(ABC):
     """
-    Interface that every strategy plugin must implement.
+    Every strategy must subclass this and implement the three methods below.
 
-    The bot passes a context dict into each method containing all the
-    live market data available at call time:
+    The context dict passed by options_bot.py contains:
+      instrument    str          e.g. "BANKNIFTY"
+      exchange      str          e.g. "INDEX", "MCX"
+      atm_strike    int
+      expiry        str          e.g. "30MAR2026"
+      option_chain  DataFrame    CE/PE delta, OI, LTP, security IDs
+      lot_size      int
+      open_trades   list[Trade]
+      closed_trades list[Trade]
+      broker        DhanBroker
 
-        context = {
-            "instrument":   "NIFTY",          # str
-            "atm_strike":   24500,             # int  — ATM from option chain
-            "expiry":       "27MAR2025",       # str  — expiry string from Dhan
-            "option_chain": <DataFrame>,       # full OC with deltas, OI, LTP
-            "lot_size":     50,                # int
-            "open_trades":  [...],             # list[Trade] — current open positions
-            "closed_trades": [...],            # list[Trade] — closed today
-            "broker":       <DhanBroker>,      # broker instance for any extra calls
-        }
-
-    For exit_criteria and adjustment_done, the trade being evaluated is
-    also passed as "trade" inside the context dict.
+    Exit / adjustment context additionally contains:
+      trade         Trade
+      ltps          {symbol: ltp}
+      exit_reason   str          (adjustment_done only)
     """
 
-    # ── Identity ───────────────────────────────────────────────────
-    NAME        = "base"       # override in each subclass — must match STRATEGY_REGISTRY key
-    DESCRIPTION = ""           # human-readable description shown at bot startup
+    NAME: str        = "base"
+    DESCRIPTION: str = ""
 
-    # ── entry_criteria ─────────────────────────────────────────────
     @abstractmethod
-    def entry_criteria(self, context):
+    def entry_criteria(self, context: dict) -> Optional[EntrySignal]:
         """
-        Decide whether to enter a trade for this instrument this cycle.
+        Evaluate market conditions and decide whether to open a new trade.
 
-        Returns one of:
-            None                    → no trade, skip this instrument
-            EntrySignal(...)        → enter a trade with these legs
-
-        Use the context to read option chain, ATM, expiry, etc.
-        Do NOT place orders here — just return what you want to trade.
-        The bot handles order placement after this returns.
+        Return an EntrySignal to open a trade, or None to skip this cycle.
         """
-        pass
 
-    # ── exit_criteria ──────────────────────────────────────────────
     @abstractmethod
-    def exit_criteria(self, context):
+    def exit_criteria(self, context: dict):
         """
-        Decide whether an open trade should be closed this cycle.
+        Decide whether the open trade should be closed.
 
-        context["trade"] is the Trade object being evaluated.
-        context["ltps"]  is {symbol: current_ltp} for all legs.
-
-        Returns:
-            (False, "")           → keep the trade open
-            (True,  "reason str") → close the trade, reason logged + saved to Excel
+        Return (True, reason_str) to close, or (False, "") to hold.
         """
-        pass
 
-    # ── adjustment_done ────────────────────────────────────────────
     @abstractmethod
-    def adjustment_done(self, context):
+    def adjustment_done(self, context: dict) -> bool:
         """
-        Called after exit_criteria returns True, before orders are placed.
-        Use this to modify legs, roll strikes, or add hedges.
+        Called when exit_criteria fires. Implement mid-trade adjustments here.
 
-        Returns:
-            False  → no adjustment needed, proceed with normal close
-            True   → adjustment was applied (bot skips the normal close)
+        Return True if an adjustment was made (bot skips closing this cycle).
+        Return False to proceed with a normal full close.
         """
-        pass
-
-
-# ── EntrySignal — what entry_criteria() returns to the bot ─────────
-
-class EntrySignal:
-    """
-    Carries the trade setup decided by entry_criteria().
-    The bot reads this and places the actual orders.
-
-    legs: list of LegOrder dicts describing each option to trade.
-    Each LegOrder:
-        {
-            "security_id":    int,   # CE SECURITY_ID or PE SECURITY_ID from OC
-            "option_type":    str,   # "CE" | "PE"
-            "transaction":    str,   # "SELL" | "BUY"
-            "lots":           int,
-        }
-    """
-
-    def __init__(self, legs, strategy_name):
-        self.legs          = legs           # list of LegOrder dicts (see above)
-        self.strategy_name = strategy_name  # matches BaseStrategy.NAME
-
-    def __repr__(self):
-        return "EntrySignal(strategy={}, legs={})".format(self.strategy_name, len(self.legs))
