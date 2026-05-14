@@ -365,7 +365,8 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
 
         order_exchange = "NFO" if trade.exchange == "INDEX" else trade.exchange
         no_entry_day   = getattr(config, "STRADDLE_NO_ENTRY_WEEKDAY", 4)
-        is_blocked_day = (datetime.now().weekday() == no_entry_day)
+        #is_blocked_day = (datetime.now().weekday() == no_entry_day)
+        is_blocked_day = True  # BLOCK ALL RE-ENTRIES for now, to avoid confusion during testing
 
         logger.info(
             "[%s][%s] Straddle reset: closing all %d open leg(s)%s",

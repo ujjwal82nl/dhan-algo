@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 
 def is_market_open():
     now = datetime.now().strftime("%H:%M")
+    print (f"Now: {now} | Market Hours: {config.MARKET_OPEN} - {config.MARKET_CLOSE}")
     return config.MARKET_OPEN <= now <= config.MARKET_CLOSE
 
 
@@ -126,20 +127,22 @@ class OptionsBot:
 
     # ── Entry ──────────────────────────────────────────────────────────
 
-    def try_entry(self, instrument, exchange):
+    def try_entry(self, instrument, exchange, expiry_index=None):
         """
         Fetch market data for *instrument* on *exchange*, build context,
         call strategy.entry_criteria(), place orders.
         exchange is always taken from config.INSTRUMENTS — never hardcoded.
         """
+        idx = expiry_index if expiry_index is not None else config.EXPIRY_INDEX
+
         # Option chain: exchange string comes from config, not hardcoded
         atm_strike, oc = self.broker.get_option_chain(
             underlying  = instrument,
             exchange    = exchange,
-            expiry      = config.EXPIRY_INDEX,
+            expiry      = idx,
             num_strikes = config.NUM_STRIKES,
         )
-        expiry   = self.broker.get_expiry_list(instrument, exchange)[config.EXPIRY_INDEX]
+        expiry   = self.broker.get_expiry_list(instrument, exchange)[idx]
         lot_size = self.broker.get_lot_size_from_chain(instrument, oc)
 
         logger.info("[%s/%s][%s] ATM=%s | Expiry=%s",
@@ -279,10 +282,14 @@ class OptionsBot:
             # Adjustment check before exit check
             if hasattr(self.strategy, "check_and_adjust"):
                 adj_result = self.strategy.check_and_adjust(exit_context)
-                adjusted, closed_leg, new_leg = (
-                    adj_result if isinstance(adj_result, tuple)
-                    else (adj_result, None, None)
-                )
+                if not isinstance(adj_result, tuple):
+                    adj_result = (adj_result, None, None)
+                # Unpack first 3 values — absorb any extra values gracefully
+                adjusted     = adj_result[0]
+                closed_leg   = adj_result[1] if len(adj_result) > 1 else None
+                new_leg      = adj_result[2] if len(adj_result) > 2 else None
+                reset_signal = adj_result[3] if len(adj_result) > 3 else None
+
                 if adjusted:
                     tracker.update_open_position(trade)
                     if closed_leg and new_leg:
@@ -291,10 +298,42 @@ class OptionsBot:
                             adj_count   = getattr(trade, "adj_count", 1),
                             is_straddle = getattr(trade, "adj_straddle", False),
                         )
-                    logger.info("[%s][%s] Adjustment applied and recorded",
-                                trade.trade_id, self.strategy.NAME)
+                    # ── Straddle reset ─────────────────────────────────────────
+                    # _straddle_reset already closed all legs and got fills.
+                    # We only need to: mark trade closed in memory + tracker,
+                    # then optionally re-enter on the next expiry.
+                    if reset_signal:
+                        trade.status = "CLOSED"
+                        self.open_trades.remove(trade)
+                        self.closed_trades.append(trade)
+                        tracker.close_position(
+                            trade, exit_reason="straddle_reset_next_expiry"
+                        )
+                        logger.info(
+                            "[%s][%s] Straddle reset recorded | re_entry=%s | "
+                            "next expiry index=%d",
+                            trade.trade_id, self.strategy.NAME,
+                            reset_signal.get("re_entry"),
+                            reset_signal.get("expiry_index", config.EXPIRY_INDEX + 1),
+                        )
+ 
+                        if reset_signal.get("re_entry", False):
+                            self.try_entry(
+                                reset_signal["instrument"],
+                                reset_signal["exchange"],
+                                expiry_index=reset_signal["expiry_index"],
+                            )
+                        else:
+                            logger.info(
+                                "[%s] Re-entry blocked (blocked weekday)",
+                                reset_signal["instrument"],
+                            )
+                    else:
+                        logger.info(
+                            "[%s][%s] Adjustment applied and recorded",
+                            trade.trade_id, self.strategy.NAME,
+                        )
                     continue
-
             should_exit, reason = self.strategy.exit_criteria(exit_context)
 
             # Ujjwal: commented out for not closing the positions.
