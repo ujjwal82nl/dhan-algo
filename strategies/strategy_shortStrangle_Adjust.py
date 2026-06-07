@@ -97,6 +97,8 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
                     "transaction": "SELL",
                     "ltp":         ce_ltp,
                     "lots":        config.MAX_LOTS_PER_TRADE,
+                    "order_type":  "MARKET",
+                    "product":     "NRML",
                 },
                 {
                     "security_id": int(pe_row["PE SECURITY_ID"]),
@@ -104,6 +106,8 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
                     "transaction": "SELL",
                     "ltp":         pe_ltp,
                     "lots":        config.MAX_LOTS_PER_TRADE,
+                    "order_type":  "MARKET",
+                    "product":     "NRML",
                 },
             ],
         )
@@ -239,6 +243,8 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         new_sec_id = int(new_row["{} SECURITY_ID".format(roll_side)])
         new_ltp    = float(new_row["{} LTP".format(roll_side)])
         new_symbol = broker.get_security_name(new_sec_id)
+        product    = new_row.get("product", "NRML")
+        order_type = new_row.get("order_type", "MARKET")
 
         # ── Straddle guard — dispatch to STRADDLE_ACTION ───────────────
         if roll_side == "CE":
@@ -269,6 +275,8 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
             new_sec_id = int(row_data["{} SECURITY_ID".format(roll_side)])
             new_ltp    = float(row_data["{} LTP".format(roll_side)])
             new_symbol = broker.get_security_name(new_sec_id)
+            tradingsymbol = broker.get_option_symbol(new_sec_id)
+           
 
         # ── Exchange for order placement ───────────────────────────────
         order_exchange = "NFO" if trade.exchange == "INDEX" else trade.exchange
@@ -278,9 +286,12 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
                     trade.trade_id, STRATEGY_NAME,
                     roll_side, profit_leg.symbol, ltps.get(profit_leg.symbol, 0))
 
-        close_order_id = broker.place_buy_order(
-            profit_leg.symbol, profit_leg.quantity, exchange=order_exchange
-        )
+        # close_order_id = broker.place_buy_order(
+        #     profit_leg.symbol, profit_leg.quantity, exchange=order_exchange
+        # )
+        close_order_id = broker.place_buy_order(strategryName=self.strategy.NAME, tradingsymbol=profit_leg.tradingsymbol, 
+                                                quantity=qty, product=product, order_type=order_type,
+                                                exchange=order_exchange)
         if not close_order_id:
             logger.error("[%s][%s] Failed to close %s leg — aborting adjustment",
                          trade.trade_id, STRATEGY_NAME, roll_side)
@@ -297,9 +308,13 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
         logger.info("[%s][%s] Selling new %s strike %d @ Rs.%.1f",
                     trade.trade_id, STRATEGY_NAME, roll_side, new_strike, new_ltp)
 
-        new_order_id = broker.place_sell_order(
-            new_symbol, profit_leg.quantity, exchange=order_exchange
-        )
+        # new_order_id = broker.place_sell_order(
+        #     new_symbol, profit_leg.quantity, exchange=order_exchange
+        # )
+        new_order_id = broker.place_sell_order(strategryName=self.strategy.NAME, tradingsymbol=tradingsymbol, 
+                                                quantity=qty, product=product, order_type=order_type,
+                                                exchange=order_exchange)
+
         if not new_order_id:
             logger.error("[%s][%s] Failed to open new %s leg — adjustment incomplete",
                          trade.trade_id, STRATEGY_NAME, roll_side)
@@ -317,6 +332,7 @@ class ShortStrangleAdjustStrategy(BaseStrategy):
 
         new_leg = OptionLeg(
             symbol        = new_symbol,
+            tradingsymbol = tradingsymbol,
             instrument    = trade.instrument,
             exchange      = trade.exchange,
             expiry        = profit_leg.expiry,

@@ -8,8 +8,18 @@
 # Local / Windows development:
 # CONFIG_FILE = "C:/src/dhan/algo/config.json"
 # Docker / VPS examples (uncomment and adjust as needed):
-# CONFIG_FILE = "/app/config.json"
-CONFIG_FILE = "/home/ujjwal/src/secrets/dhan_config.json"
+# CONFIG_FILE = "/home/ujjwal/src/secrets/dhan_config.json"
+CONFIG_FILE = "C:/src/dhan/algo/config.json"
+
+
+# ── Broker selection ──────────────────────────────────────────────
+# "dhan"     — Dhan-Tradehull (paper trading works; live WIP)
+# "openalgo" — OpenAlgo REST API (live orders working)
+#
+# Credentials for the chosen broker must be in config.json.
+# See config.json.example for the expected structure.
+#
+BROKER = "hybrid"   # "dhan" | "openalgo" | "hybrid"
 
 # ── Instruments ───────────────────────────────────────────────────
 # Map each instrument name to its exchange string as required by
@@ -23,7 +33,7 @@ CONFIG_FILE = "/home/ujjwal/src/secrets/dhan_config.json"
 # Add or remove instruments here — no other file needs to change.
 #
 INSTRUMENTS = {
-    "BANKNIFTY" : "INDEX",
+    # "BANKNIFTY" : "INDEX",
     "NIFTY"     : "INDEX",
     # "FINNIFTY":  "INDEX",
     #"CRUDEOIL":  "MCX",
@@ -40,7 +50,7 @@ EXPIRY_INDEX  = 1
 NUM_STRIKES   = 30    # number of strikes either side of ATM to fetch
 
 # ── Strategy Parameters ───────────────────────────────────────────
-TARGET_DELTA          = 0.18   # Sell strikes near this delta
+TARGET_DELTA          = 0.38   # Sell strikes near this delta
 MAX_DELTA             = 0.20   # Reject strike if delta exceeds this
 MIN_DAYS_TO_EXPIRY    = 1      # Avoid same-day expiry entries
 MAX_DAYS_TO_EXPIRY    = 7      # Weekly expiry window
@@ -65,8 +75,8 @@ ACTIVE_STRATEGY = "shortStrangle_Adjust"   # currently active strategy
 EXCEL_FILE = "options_tracker.xlsx"
 
 # ── Timing (IST) ──────────────────────────────────────────────────
-MARKET_OPEN            = "09:00"
-MARKET_CLOSE           = "15:20"
+MARKET_OPEN            = "08:00"
+MARKET_CLOSE           = "23:59"
 SCAN_INTERVAL_SECONDS  = 120
 
 # ── Paper Trading ─────────────────────────────────────────────────

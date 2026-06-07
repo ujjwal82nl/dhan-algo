@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class OptionLeg:
     symbol:        str
+    tradingsymbol: str
     instrument:    str          # NIFTY | BANKNIFTY
     exchange:      str          # INDEX
     expiry:        str          # e.g. '25JAN2025'

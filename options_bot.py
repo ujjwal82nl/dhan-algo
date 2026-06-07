@@ -3,6 +3,7 @@ from tabulate import tabulate
 
 """
 options_bot.py — Main entry point.
+
 Run: python options_bot.py
 
 Flow every scan cycle:
@@ -21,13 +22,13 @@ from datetime import datetime, date
 from typing import List
 
 import config
-from broker import DhanBroker, get_tsl_client, generate_bool
+from broker import get_broker, generate_bool
 from strategies import (
     OptionLeg, Trade, StrikeSelector, EntryFilter, ExitManager, get_strategy
 )
 import csv_tracker as tracker
 
-# ── Logging setup ──────────────────────────────────────────────────
+# ── Logging setup ──────────────────────────────────────────────────────
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL),
@@ -40,7 +41,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ── Helpers ────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────
 
 def is_market_open():
     now = datetime.now().strftime("%H:%M")
@@ -53,13 +54,12 @@ def compute_daily_loss(closed_trades):
     return sum(max(0, -t.pnl) for t in today_closed)
 
 
-# ── Core logic ─────────────────────────────────────────────────────
+# ── Core logic ─────────────────────────────────────────────────────────
 
 class OptionsBot:
 
     def __init__(self):
-        tsl = get_tsl_client()
-        self.broker        = DhanBroker(tsl)
+        self.broker        = get_broker()
         self.open_trades:   List[Trade] = []
         self.closed_trades: List[Trade] = []
         self.strategy = get_strategy(config.ACTIVE_STRATEGY)
@@ -71,13 +71,12 @@ class OptionsBot:
             self.open_trades.extend(resumed)
             logger.info(
                 "Resumed %d open position(s) from CSV tracker — "
-                "skipping new entry until these are resolved.", len(resumed),
+                "skipping new entry until these are resolved.", len(resumed)
             )
 
         logger.info(
             "OptionsBot initialised — strategy: %s | instruments: %s",
-            self.strategy.NAME,
-            list(config.INSTRUMENTS.keys()),
+            self.strategy.NAME, config.INSTRUMENTS,
         )
 
     def show_open_positions(self, trade, ltp_map):
@@ -127,29 +126,23 @@ class OptionsBot:
 
     # ── Entry ──────────────────────────────────────────────────────────
 
-    def try_entry(self, instrument, exchange, expiry_index=None):
-        """
-        Fetch market data for *instrument* on *exchange*, build context,
-        call strategy.entry_criteria(), place orders.
-        exchange is always taken from config.INSTRUMENTS — never hardcoded.
-        """
-        idx = expiry_index if expiry_index is not None else config.EXPIRY_INDEX
+    def try_entry(self, instrument, exchange):
+        """Fetch market data, build context, call strategy.entry_criteria(), place orders."""
 
-        # Option chain: exchange string comes from config, not hardcoded
         atm_strike, oc = self.broker.get_option_chain(
-            underlying  = instrument,
-            exchange    = exchange,
-            expiry      = idx,
-            num_strikes = config.NUM_STRIKES,
+            underlying=instrument,
+            exchange=exchange,
+            expiry=config.EXPIRY_INDEX,
+            num_strikes=config.NUM_STRIKES,
         )
-        expiry   = self.broker.get_expiry_list(instrument, exchange)[idx]
+        expiry   = self.broker.get_expiry_list(instrument, exchange)[config.EXPIRY_INDEX]
         lot_size = self.broker.get_lot_size_from_chain(instrument, oc)
 
         logger.info("[%s/%s][%s] ATM=%s | Expiry=%s",
                     instrument, exchange, self.strategy.NAME, atm_strike, expiry)
 
         daily_loss = compute_daily_loss(self.closed_trades)
-        ef = EntryFilter(self.open_trades, daily_loss)
+        ef         = EntryFilter(self.open_trades, daily_loss)
         ok, reason = ef.can_enter(instrument, config.MIN_PREMIUM)
         if not ok:
             logger.info("[%s] SKIP: %s", instrument, reason)
@@ -181,20 +174,25 @@ class OptionsBot:
         )
 
         for leg_def in signal.legs:
-            sec_id = leg_def["security_id"]
-            symbol = self.broker.get_security_name(sec_id)
-            qty    = leg_def["lots"] * lot_size
-            ltp    = leg_def.get("ltp", 0.0)
-            txn    = leg_def["transaction"]   # "SELL" or "BUY"
+            sec_id       = leg_def["security_id"]
+            symbol       = self.broker.get_security_name(sec_id)     #← for logging and leg records; order placement uses tradingsymbol
+            tradingsymbol= self.broker.get_option_symbol(sec_id)     #← get the full tradingsymbol for order placement
+            qty          = leg_def["lots"] * lot_size
+            ltp          = leg_def.get("ltp", 0.0)
+            txn          = leg_def["transaction"]   # "SELL" or "BUY"
+            product      = leg_def.get("product", "NRML")
+            order_type   = leg_def.get("order_type", "MARKET")
 
             # Order placement: exchange for F&O legs is the instrument's own exchange.
             # INDEX options trade on NFO; MCX options trade on MCX.
             order_exchange = "NFO" if exchange == "INDEX" else exchange
             if txn == "SELL":
-                order_id = self.broker.place_sell_order(symbol, qty,
+                order_id = self.broker.place_sell_order(strategryName=self.strategy.NAME, tradingsymbol=tradingsymbol, 
+                                                        quantity=qty, product=product, order_type=order_type,
                                                         exchange=order_exchange)
             else:
-                order_id = self.broker.place_buy_order(symbol, qty,
+                order_id = self.broker.place_buy_order(strategryName=self.strategy.NAME, tradingsymbol=tradingsymbol, 
+                                                       quantity=qty, product=product, order_type=order_type,
                                                        exchange=order_exchange)
             time.sleep(1)
 
@@ -203,6 +201,7 @@ class OptionsBot:
                              instrument, symbol)
                 return
 
+            # fill = per-unit executed price
             fill = self.broker.get_executed_price(order_id, paper_ltp=ltp)
 
             col_sid = "CE SECURITY_ID" if leg_def["option_type"] == "CE" \
@@ -212,16 +211,17 @@ class OptionsBot:
 
             trade.legs.append(OptionLeg(
                 symbol        = symbol,
+                tradingsymbol = tradingsymbol,   # ← full tradingsymbol for order placement
                 instrument    = instrument,
                 exchange      = exchange,     # ← stored on OptionLeg
                 expiry        = expiry,
                 strike        = strike,
                 option_type   = leg_def["option_type"],
-                transaction   = txn,              # ← stored on every leg
+                transaction   = txn,            # ← opening action stored on leg
                 lots          = leg_def["lots"],
                 quantity      = qty,
-                entry_price   = fill,
-                entry_premium = fill * qty,
+                entry_price   = fill,           # ← raw per-unit fill
+                entry_premium = fill * qty,     # ← total Rs. for this leg
                 order_id      = order_id,
             ))
 
@@ -231,10 +231,10 @@ class OptionsBot:
                     instrument, exchange, self.strategy.NAME,
                     trade.trade_id, trade.total_premium_collected)
 
-    # ── Exit monitoring ────────────────────────────────────────────
+    # ── Exit monitoring ────────────────────────────────────────────────
 
     def monitor_exits(self):
-        """Call strategy exit/adjustment logic per open trade."""
+        """Call strategy.exit_criteria() and strategy.adjustment_done() per open trade."""
 
         for trade in list(self.open_trades):
             if trade.strategy != self.strategy.NAME:
@@ -246,13 +246,14 @@ class OptionsBot:
                 logger.warning("[%s] LTP unavailable — skipping cycle", trade.trade_id)
                 continue
 
-            # Option chain refresh: use exchange stored on the Trade object
             oc         = None
             atm_strike = 0
+            underlying  = trade.instrument
+            exchange    = trade.exchange
             try:
                 result = self.broker.get_option_chain(
-                    underlying  = trade.instrument,
-                    exchange    = trade.exchange,   # ← from Trade, not hardcoded
+                    underlying  = underlying,
+                    exchange    = exchange,   # ← from Trade, not hardcoded
                     expiry      = config.EXPIRY_INDEX,
                     num_strikes = config.NUM_STRIKES,
                 )
@@ -298,41 +299,8 @@ class OptionsBot:
                             adj_count   = getattr(trade, "adj_count", 1),
                             is_straddle = getattr(trade, "adj_straddle", False),
                         )
-                    # ── Straddle reset ─────────────────────────────────────────
-                    # _straddle_reset already closed all legs and got fills.
-                    # We only need to: mark trade closed in memory + tracker,
-                    # then optionally re-enter on the next expiry.
-                    if reset_signal:
-                        trade.status = "CLOSED"
-                        self.open_trades.remove(trade)
-                        self.closed_trades.append(trade)
-                        tracker.close_position(
-                            trade, exit_reason="straddle_reset_next_expiry"
-                        )
-                        logger.info(
-                            "[%s][%s] Straddle reset recorded | re_entry=%s | "
-                            "next expiry index=%d",
-                            trade.trade_id, self.strategy.NAME,
-                            reset_signal.get("re_entry"),
-                            reset_signal.get("expiry_index", config.EXPIRY_INDEX + 1),
-                        )
- 
-                        if reset_signal.get("re_entry", False):
-                            self.try_entry(
-                                reset_signal["instrument"],
-                                reset_signal["exchange"],
-                                expiry_index=reset_signal["expiry_index"],
-                            )
-                        else:
-                            logger.info(
-                                "[%s] Re-entry blocked (blocked weekday)",
-                                reset_signal["instrument"],
-                            )
-                    else:
-                        logger.info(
-                            "[%s][%s] Adjustment applied and recorded",
-                            trade.trade_id, self.strategy.NAME,
-                        )
+                    logger.info("[%s][%s] Adjustment applied and recorded",
+                                trade.trade_id, self.strategy.NAME)
                     continue
             should_exit, reason = self.strategy.exit_criteria(exit_context)
 
@@ -358,25 +326,40 @@ class OptionsBot:
                 continue
 
             # Close all open legs
-            order_exchange = "NFO" if trade.exchange == "INDEX" else trade.exchange
-
-            # Close transaction is always the opposite of the entry transaction:
-            # SELL leg → BUY to close  |  BUY leg → SELL to close
             all_closed = True
-            for leg in trade.legs:
-                if leg.status == "OPEN":
-                    close_txn = "BUY" if leg.transaction == "SELL" else "SELL"
+            lot_size = self.broker.get_lot_size_from_chain(underlying, oc)
+
+            for leg_def in trade.legs:
+                sec_id       = leg_def["security_id"]
+                symbol       = self.broker.get_security_name(sec_id)     #← for logging and leg records; order placement uses tradingsymbol
+                tradingsymbol= self.broker.get_option_symbol(sec_id)     #← get the full tradingsymbol for order placement
+                qty          = leg_def["lots"] * lot_size
+                ltp          = leg_def.get("ltp", 0.0)
+                txn          = leg_def["transaction"]   # "SELL" or "BUY"
+                product      = leg_def.get("product", "NRML")
+                order_type   = leg_def.get("order_type", "MARKET")
+
+                # Order placement: exchange for F&O legs is the instrument's own exchange.
+                # INDEX options trade on NFO; MCX options trade on MCX.
+                order_exchange = "NFO" if exchange == "INDEX" else exchange
+
+                if leg_def.status == "OPEN":
+                    close_txn = "BUY" if leg_def.transaction == "SELL" else "SELL"
                     if close_txn == "BUY":
-                        order_id = self.broker.place_buy_order(leg.symbol, leg.quantity, exchange=order_exchange)
+                        order_id = self.broker.place_buy_order(strategryName=self.strategy.NAME, tradingsymbol=tradingsymbol, 
+                                                            quantity=qty, product=product, order_type=order_type,
+                                                            exchange=order_exchange)
                     else:
-                        order_id = self.broker.place_sell_order(leg.symbol, leg.quantity, exchange=order_exchange)
+                        order_id = self.broker.place_sell_order(strategryName=self.strategy.NAME, tradingsymbol=tradingsymbol, 
+                                                            quantity=qty, product=product, order_type=order_type,
+                                                            exchange=order_exchange)
 
                     if order_id:
-                        leg.exit_premium = ltps.get(leg.symbol, leg.entry_premium)
-                        leg.status       = "CLOSED"
+                        leg_def.exit_premium = ltps.get(leg_def.symbol, leg_def.entry_premium)
+                        leg_def.status       = "CLOSED"
                     else:
                         all_closed = False
-                        logger.error("Failed to close leg %s", leg.symbol)
+                        logger.error("Failed to close leg %s", leg_def.symbol)
                     time.sleep(1)
 
             if all_closed:
@@ -385,17 +368,20 @@ class OptionsBot:
                 self.closed_trades.append(trade)
                 tracker.close_position(trade, exit_reason=reason)
 
-    # ── Daily summary ──────────────────────────────────────────────
+    # ── Daily summary ──────────────────────────────────────────────────
 
     def update_daily(self):
         today_closed = [t for t in self.closed_trades if t.entry_date == date.today()]
         today_opened = [t for t in self.open_trades   if t.entry_date == date.today()]
+
         if not today_closed:
             return
+
         gross  = sum(t.total_premium_collected for t in today_closed)
         cost   = sum(t.current_premium         for t in today_closed)
         wins   = sum(1 for t in today_closed if t.pnl >= 0)
         losses = sum(1 for t in today_closed if t.pnl < 0)
+
         tracker.update_daily_summary(
             trades_opened = len(today_opened),
             trades_closed = len(today_closed),
@@ -405,7 +391,7 @@ class OptionsBot:
             losing        = losses,
         )
 
-    # ── Main loop ──────────────────────────────────────────────────
+    # ── Main loop ──────────────────────────────────────────────────────
 
     def run(self):
         logger.info("=" * 60)
