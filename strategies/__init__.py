@@ -114,18 +114,17 @@ class EntryFilter:
         self.open_positions = open_positions
         self.daily_loss     = daily_loss
 
-    def can_enter(self, instrument, premium):
-        open_count = len([t for t in self.open_positions if t.status == "OPEN"])
+    def can_enter(self, instrument, strategy_name):
+        open_count = len([t for t in self.open_positions if t.strategy == strategy_name and t.status == "OPEN"])
         if open_count >= config.MAX_OPEN_POSITIONS:
             return False, "Max open positions ({}) reached".format(
                 config.MAX_OPEN_POSITIONS)
+        
         if self.daily_loss >= config.MAX_DAILY_LOSS_INR:
             return False, "Daily loss limit Rs.{} hit".format(config.MAX_DAILY_LOSS_INR)
-        if premium < config.MIN_PREMIUM:
-            return False, "Premium {:.0f} below MIN_PREMIUM {}".format(
-                premium, config.MIN_PREMIUM)
+
         already_in = any(
-            t.instrument == instrument and t.status == "OPEN"
+            t.instrument == instrument and t.strategy == strategy_name and t.status == "OPEN"
             for t in self.open_positions
         )
         if already_in:
@@ -184,9 +183,11 @@ def build_symbol(instrument, strike, option_type, expiry):
 def _build_registry():
     from strategies.strategy_shortStrangle        import ShortStrangleStrategy
     from strategies.strategy_shortStrangle_Adjust import ShortStrangleAdjustStrategy
+    from strategies.strategy_intradayShortSell import IntradayShortSellStrategy
     return {
         ShortStrangleStrategy.NAME:       ShortStrangleStrategy,
         ShortStrangleAdjustStrategy.NAME: ShortStrangleAdjustStrategy,
+        IntradayShortSellStrategy.NAME:   IntradayShortSellStrategy,
     }
 
 

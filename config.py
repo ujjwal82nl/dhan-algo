@@ -23,7 +23,7 @@ CONFIG_FILE = "/home/ujjwal/src/secrets/dhan_config.json"
 # Add or remove instruments here — no other file needs to change.
 #
 INSTRUMENTS = {
-    "BANKNIFTY" : "INDEX",
+    #"BANKNIFTY" : "INDEX",
     "NIFTY"     : "INDEX",
     # "FINNIFTY":  "INDEX",
     #"CRUDEOIL":  "MCX",
@@ -59,7 +59,8 @@ MAX_DAILY_LOSS_INR    = 10000  # Hard stop for the day (Rs.)
 # strategies.py _build_registry(), then set the name here.
 #    shortStrangle
 #    shortStrangle_Adjust
-ACTIVE_STRATEGY = "shortStrangle_Adjust"   # currently active strategy
+#    intradayShortSell
+ACTIVE_STRATEGY = "intradayShortSell"
 
 # ── Excel Tracker ─────────────────────────────────────────────────
 EXCEL_FILE = "options_tracker.xlsx"

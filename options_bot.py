@@ -58,7 +58,7 @@ def compute_daily_loss(closed_trades):
 class OptionsBot:
 
     def __init__(self):
-        tsl = get_tsl_client()
+        tsl                = get_tsl_client("pin_totp")
         self.broker        = DhanBroker(tsl)
         self.open_trades:   List[Trade] = []
         self.closed_trades: List[Trade] = []

@@ -38,17 +38,31 @@ def load_config():
         return json.load(f)
 
 
-def get_tsl_client():
+def get_tsl_client(method="pin_totp"):
     """Create and return authenticated Tradehull client."""
     from Dhan_Tradehull import Tradehull
-    cfg         = load_config()
-    creds       = cfg["dhan_config"]
 
-    client_code  = creds["client_code"]
-    totp_secret  = creds["totp_secret"]
-    pin          = creds["pin"]
+    # 1. Dynamically find the folder where THIS script is running
+    # This works on Windows, Mac, and Linux perfectly
+    #current_dir = Path(__file__).parent.parent
+    config_file = Path(".env")
+    
+    # 2. Check if file exists before reading (Prevent crashes)
+    if not config_file.exists():
+        raise FileNotFoundError(f"Missing .env in {config_file.parent}")
 
-    return Tradehull(ClientCode=client_code, mode="pin_totp", pin=pin, totp_secret=totp_secret)
+    # 3. Read the JSON
+    with open(config_file, "r") as f:
+        config = json.load(f)
+    
+    if method == "pin_totp":
+        creds = config["dhan_config"]
+        # return Tradehull(creds["client_code"], creds["access_token"])
+        return Tradehull(ClientCode=creds["client_code"], totp_secret=creds["totp_secret"], pin=creds["pin"], mode="pin_totp")
+    elif method == "access_token":
+        creds = config["dhan_token"]
+        return Tradehull(ClientCode=creds["client_code"], access_token=creds["access_token"])
+   
 
 
 class DhanBroker:
@@ -112,7 +126,7 @@ class DhanBroker:
         Returns None if the library returns a failure response.
         Caller must check for None and skip processing accordingly.
         """
-        time.sleep(1)
+        time.sleep(PAUSE_BETWEEN_CALLS)
         result = self.tsl.get_ltp_data(names=names)
         if not result or (isinstance(result, dict) and result.get("status") == "failure"):
             logger.warning("get_ltp returned failure response for %s — skipping", names)
